@@ -1,53 +1,23 @@
 import io
 import time
+import warnings
+from decimal import Decimal
 
-import matplotlib
 import matplotlib.cm as cm
-import numba
+import matplotlib.pyplot as plot
+import numpy as np
 import pydotplus
+import utils
 from keras.utils import to_categorical
 from prince import MCA
-from scipy.stats import stats, gaussian_kde
+from scipy.stats import stats
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA, FastICA
 from sklearn.metrics import silhouette_score, silhouette_samples
-import matplotlib.pyplot as plot
-import numpy as np
 from sklearn.mixture import GaussianMixture
-from sklearn.random_projection import GaussianRandomProjection, SparseRandomProjection
-from sklearn.tree import DecisionTreeClassifier, export_graphviz
-from decimal import Decimal
+from sklearn.random_projection import GaussianRandomProjection
 from sklearn.random_projection import johnson_lindenstrauss_min_dim
-import warnings
-
-import utils
-from scipy.cluster import hierarchy
-
-
-def kmean_demo():
-    x1 = np.random.normal(2, 0.7, size=(500, 2))
-    x2 = np.random.normal(4, 0.7, size=(500, 2))
-
-    data = np.append(x1, x2).reshape(1000, 2)
-
-    kmeans = KMeans(n_clusters=2, random_state=0)
-    kmeans.fit(data)
-    print(f'Score: {kmeans.score(data)}')
-    labels = kmeans.predict(data)
-
-    plot.scatter(data[:, 0], data[:, 1], c=labels)
-    plot.show()
-
-
-# def categorical_accuracy(labels, predicted_labels, classes):
-#     data = [[] for _ in range(classes)]
-#     for label, predicted in zip(labels, predicted_labels):
-#         data[predicted].append(label)
-#
-#     catacc = np.average([stats.mode(d)[1][0] / len(d) for d in data], weights=[len(d) for d in data])
-#     corrected_catacc = (catacc - 1.0 / classes) / (1.0 - 1.0 / classes)
-#
-#     return corrected_catacc
+from sklearn.tree import DecisionTreeClassifier, export_graphviz
 
 
 def density_categorical_accuracy(labels, predicted_labels, classes):
@@ -190,7 +160,6 @@ def expectation_maximization_silhouettes(name, x):
 
 
 def expectation_maximization_thresholds(x, y, k, powers=range(14)):
-    # thresholds = np.flip(1 - np.logspace(-7, 0, 25, endpoint=False))
     thresholds = [1 - Decimal(str(f'1e-{k}')) for k in powers]
     samples = [[] for _ in range(len(thresholds))]
     trials = 3
@@ -216,11 +185,9 @@ def expectation_maximization_thresholds(x, y, k, powers=range(14)):
 
     plot.style.use('seaborn-darkgrid')
     plot.title('Influence of the probability threshold on the categorical accuracy')
-    # plot.xscale('logit')
     plot.xticks(powers, [f'1-1e-{k}' for k in powers], rotation=60)
     plot.xlabel('Probability threshold')
     plot.ylabel('Categorical accuracy')
-    # plot.gca().spines['bottom']._adjust_location()
     plot.fill_between(powers, cataccs - cataccs_std / 2, cataccs + cataccs_std / 2, alpha=0.5)
     plot.plot(powers, cataccs, 'o-')
     plot.show()
@@ -413,12 +380,12 @@ def jlmd_search(ubs, names):
     plot.show()
 
 
-def rca(name, x, y):
+def rp(name, x, y):
     plot.style.use('seaborn-darkgrid')
 
     for i in range(6):
-        rca = GaussianRandomProjection(eps=0.95, random_state=i)
-        transformed = rca.fit_transform(x)
+        rp = GaussianRandomProjection(eps=0.95, random_state=i)
+        transformed = rp.fit_transform(x)
 
         axes = [0, 0]
         axes_std = [0, 0]
@@ -441,7 +408,7 @@ def rca(name, x, y):
     plot.show()
 
 
-def rca_benchmark(name, x, clf):
+def rp_benchmark(name, x, clf):
     epsilons = np.linspace(0.35, 0.95, 7)
     n_components = []
     averages = []
@@ -452,8 +419,8 @@ def rca_benchmark(name, x, clf):
         samples = []
         transformed = None
         for _ in range(trials):
-            rca = GaussianRandomProjection(random_state=0, eps=eps)
-            transformed = rca.fit_transform(x)
+            rp = GaussianRandomProjection(random_state=0, eps=eps)
+            transformed = rp.fit_transform(x)
             predict = clf.fit_predict(transformed)
             silhouette_avg = silhouette_score(transformed, predict)
             samples.append(silhouette_avg)
@@ -520,14 +487,14 @@ def vae_benchmark(name, x, clf):
     plot.show()
 
 
-def reduction_clustering(xs, ys, classes, clfs, pcas, icas, rcas, encoders_vaes):
+def reduction_clustering(xs, ys, classes, clfs, pcas, icas, rps, encoders_vaes):
     cataccs = []
 
     for i in range(2):
         predicted = clfs[i].fit_predict(xs[i])
         cataccs.append(density_categorical_accuracy(ys[i], predicted, classes[i]) * 100)
 
-    for reducers in [pcas, icas, rcas]:
+    for reducers in [pcas, icas, rps]:
         for i in range(2):
             reducer = reducers[i]
             if reducer is None:
@@ -562,16 +529,9 @@ def reduction_clustering(xs, ys, classes, clfs, pcas, icas, rcas, encoders_vaes)
     for _ in range(5):
         x.append(count)
         count += 1.5
-    plot.xticks(x, ['None', 'PCA', 'ICA', 'RCA', 'VAE'])
+    plot.xticks(x, ['None', 'PCA', 'ICA', 'RP', 'VAE'])
     plot.xlabel('Feature transformation method')
     plot.ylabel('Categorical accuracy (%)')
-    plot.show()
-
-
-def legend():
-    plot.bar([0], [1], color=['tab:blue'])
-    plot.bar([1], [0.1], color=['tab:orange'])
-    plot.legend(['Adult', 'Wine reviews'], loc='upper right')
     plot.show()
 
 
@@ -590,7 +550,6 @@ def nn(xs, ys, xs_test, ys_test):
         cataccs[i] = model.evaluate(xs_test[i], ys_test[i], verbose=False)[1] * 100
 
     for k in range(2, 11):
-        print(k)
         for i in range(2):
             pca = PCA(n_components=k)
             transformed = pca.fit_transform(xs[i])
@@ -613,10 +572,10 @@ def nn(xs, ys, xs_test, ys_test):
                 cataccs[4 + i] = catacc
 
             if i == 1 and cataccs[6] == 0:
-                rca = GaussianRandomProjection(eps=0.95)
-                transformed = rca.fit_transform(xs[i])
+                rp = GaussianRandomProjection(eps=0.95)
+                transformed = rp.fit_transform(xs[i])
                 dim = np.shape(transformed)[1]
-                transformed_test = rca.transform(xs_test[i])
+                transformed_test = rp.transform(xs_test[i])
                 model = utils.create_wine_model(dim, 5)
                 model.fit(transformed[:10000], ys[i][:10000], batch_size=50, epochs=10, verbose=False)
                 catacc = model.evaluate(transformed_test, ys_test[i], verbose=False)[1] * 100
@@ -654,12 +613,10 @@ def nn(xs, ys, xs_test, ys_test):
     for _ in range(5):
         x.append(count)
         count += 1.5
-    plot.xticks(x, ['None', 'PCA', 'ICA', 'RCA', 'VAE'])
+    plot.xticks(x, ['None', 'PCA', 'ICA', 'RP', 'VAE'])
     plot.xlabel('Feature transformation method')
     plot.ylabel('Categorical accuracy (%)')
     plot.show()
-
-    print(n_components)
 
 
 def nn_benchmark(xs, ys, n_components):
@@ -700,8 +657,8 @@ def nn_benchmark(xs, ys, n_components):
             ica_samples[i].append(time.time() - start)
 
             if i == 1:
-                rca = GaussianRandomProjection(eps=0.95)
-                transformed = rca.fit_transform(xs[i])
+                rp = GaussianRandomProjection(eps=0.95)
+                transformed = rp.fit_transform(xs[i])
                 dim = np.shape(transformed)[1]
                 model = utils.create_wine_model(dim, 5)
                 start = time.time()
@@ -762,7 +719,7 @@ def nn_benchmark(xs, ys, n_components):
     for _ in range(5):
         x.append(count)
         count += 1.5
-    plot.xticks(x, ['None', 'PCA', 'ICA', 'RCA', 'VAE'])
+    plot.xticks(x, ['None', 'PCA', 'ICA', 'RP', 'VAE'])
     plot.xlabel('Feature transformation method')
     plot.ylabel('Average training time (s)')
     plot.show()
@@ -783,7 +740,6 @@ def nn2(xs, ys, xs_test, ys_test, n_components, clf_constructor):
         cataccs[i] = model.evaluate(xs_test[i], ys_test[i], verbose=False)[1] * 100
 
     for k in range(2, 11):
-        print(k)
         try:
             clf = clf_constructor(n_clusters=k)
         except:
@@ -816,9 +772,9 @@ def nn2(xs, ys, xs_test, ys_test, n_components, clf_constructor):
                 cataccs[4 + i] = catacc
 
             if i == 1:
-                rca = GaussianRandomProjection(eps=0.95)
-                transformed = rca.fit_transform(xs[i])
-                transformed_test = rca.transform(xs_test[i])
+                rp = GaussianRandomProjection(eps=0.95)
+                transformed = rp.fit_transform(xs[i])
+                transformed_test = rp.transform(xs_test[i])
                 predict = to_categorical(clf.fit_predict(transformed[:10000]))
                 predict_test = to_categorical(clf.predict(transformed_test[:10000]))
                 input_dims = [np.shape(transformed)[1], k]
@@ -862,12 +818,10 @@ def nn2(xs, ys, xs_test, ys_test, n_components, clf_constructor):
     for _ in range(5):
         x.append(count)
         count += 1.5
-    plot.xticks(x, ['None', 'PCA', 'ICA', 'RCA', 'VAE'])
+    plot.xticks(x, ['None', 'PCA', 'ICA', 'RP', 'VAE'])
     plot.xlabel('Feature transformation method')
     plot.ylabel('Categorical accuracy (%)')
     plot.show()
-
-    print(ks)
 
 
 x_adult, y_adult, x_adult_test, y_adult_test = utils.import_adult()
@@ -875,119 +829,118 @@ x_wine, y_wine, x_wine_test, y_wine_test = utils.import_wine()
 
 # K-MEANS
 
-# silhouette('adult', range(2, 15), x_adult)  # 1025s
-# cluster_breakdown('adult_kmeans', x_adult, KMeans(n_clusters=5, random_state=0).fit_predict(x_adult))  # 10s
-# cataccs('adult', range(2, 15), 2, x_adult, y_adult) # 91s
+silhouette('adult', range(2, 15), x_adult)  # 1025s
+cluster_breakdown('adult_kmeans', x_adult, KMeans(n_clusters=5, random_state=0).fit_predict(x_adult))  # 10s
+cataccs('adult', range(2, 15), 2, x_adult, y_adult) # 91s
 
-# silhouette('wine', range(2, 15), x_wine)  # 2154s
-# cluster_breakdown('wine_kmeans', x_wine, KMeans(n_clusters=3, random_state=0).fit_predict(x_wine))  # 24s
-# cataccs('wine reviews', range(2, 15), 5, x_wine, y_wine)  # 577s
+silhouette('wine', range(2, 15), x_wine)  # 2154s
+cluster_breakdown('wine_kmeans', x_wine, KMeans(n_clusters=3, random_state=0).fit_predict(x_wine))  # 24s
+cataccs('wine reviews', range(2, 15), 5, x_wine, y_wine)  # 577s
 
 # EXPECTATION MAXIMIZATION
 
-# expectation_maximization_silhouettes('adult', x_adult)  # 1214s
-# cluster_breakdown('adult_em', x_adult, GaussianMixture(n_components=6).fit_predict(x_adult))  # 74s
+expectation_maximization_silhouettes('adult', x_adult)  # 1214s
+cluster_breakdown('adult_em', x_adult, GaussianMixture(n_components=6).fit_predict(x_adult))  # 74s
 
-# expectation_maximization_silhouettes('wine', x_wine)  # 4719s
-# cluster_breakdown('wine_em', x_wine, GaussianMixture(n_components=3).fit_predict(x_wine))  # 74s
+expectation_maximization_silhouettes('wine', x_wine)  # 4719s
+cluster_breakdown('wine_em', x_wine, GaussianMixture(n_components=3).fit_predict(x_wine))  # 74s
 
 # PCA
 
-# pca('adult', x_adult, y_adult)  # 1s
-# pca_benchmark('adult', x_adult, KMeans(n_clusters=5))  # 535s
-# pca_benchmark('adult', x_adult, GaussianMixture(n_components=6))  # 519s
+pca('adult', x_adult, y_adult)  # 1s
+pca_benchmark('adult', x_adult, KMeans(n_clusters=5))  # 535s
+pca_benchmark('adult', x_adult, GaussianMixture(n_components=6))  # 519s
 
-# pca('wine', x_wine, y_wine)  # 4s
-# pca_benchmark('wine', x_wine, KMeans(n_clusters=3))  # 612s
-# pca_benchmark('wine', x_wine, GaussianMixture(n_components=3))  # 320s
-# mca('Wine reviews', x_wine, y_wine) # 62s
-# mca_benchmark('Wine reviews', x_wine, KMeans(n_clusters=3))  # 511s
-# mca_benchmark('Wine reviews', x_wine, GaussianMixture(n_components=3))  # 505s
-# pca_eigenvalues(x_adult, x_wine)  # 31s
+pca('wine', x_wine, y_wine)  # 4s
+pca_benchmark('wine', x_wine, KMeans(n_clusters=3))  # 612s
+pca_benchmark('wine', x_wine, GaussianMixture(n_components=3))  # 320s
+mca('Wine reviews', x_wine, y_wine) # 62s
+mca_benchmark('Wine reviews', x_wine, KMeans(n_clusters=3))  # 511s
+mca_benchmark('Wine reviews', x_wine, GaussianMixture(n_components=3))  # 505s
+pca_eigenvalues(x_adult, x_wine)  # 31s
 
 # ICA
 
-# ica('Adult', x_adult, y_adult)  # 2s
-# ica_benchmark('adult', x_adult, KMeans(n_clusters=5))  # 1326s
-# ica_benchmark('adult', x_adult, GaussianMixture(n_components=6))  # 1340s
-# kurtosis('Adult', x_adult, 2)  # 2s
-# kurtosis('Adult', x_adult, 3)  # 3s
-# ica_projection('Adult', x_adult, 2)  # 3s
-# ica_projection('Adult', x_adult, 3)  # 2s
+ica('Adult', x_adult, y_adult)  # 2s
+ica_benchmark('adult', x_adult, KMeans(n_clusters=5))  # 1326s
+ica_benchmark('adult', x_adult, GaussianMixture(n_components=6))  # 1340s
+kurtosis('Adult', x_adult, 2)  # 2s
+kurtosis('Adult', x_adult, 3)  # 3s
+ica_projection('Adult', x_adult, 2)  # 3s
+ica_projection('Adult', x_adult, 3)  # 2s
 
-# ica('Wine', x_wine, y_wine)  # 18s
-# ica_benchmark('wine', x_wine, KMeans(n_clusters=3))  # 1636s
-# ica_benchmark('wine', x_wine, GaussianMixture(n_components=3))  # 1700s
-# kurtosis('Wine reviews', x_wine, 2)  # 41s
-# kurtosis('Wine reviews', x_wine, 3)  # 43s
-# ica_projection('Wine', x_wine, 2)  # 39s
-# ica_projection('Wine', x_wine, 3)  # 41s
+ica('Wine', x_wine, y_wine)  # 18s
+ica_benchmark('wine', x_wine, KMeans(n_clusters=3))  # 1636s
+ica_benchmark('wine', x_wine, GaussianMixture(n_components=3))  # 1700s
+kurtosis('Wine reviews', x_wine, 2)  # 41s
+kurtosis('Wine reviews', x_wine, 3)  # 43s
+ica_projection('Wine', x_wine, 2)  # 39s
+ica_projection('Wine', x_wine, 3)  # 41s
 
-# RCA
+# rp
 
-# jlmd_search([100, 1000], ['Adult', 'Wine reviews'])  # 0s
-# rca('Wine reviews', x_wine, y_wine)  # 10S
-# rca_benchmark('Wine reviews', x_wine, KMeans(n_clusters=3))  # 1550s
-# rca_benchmark('Wine reviews', x_wine, GaussianMixture(n_components=3))  # 1700s
+jlmd_search([100, 1000], ['Adult', 'Wine reviews'])  # 0s
+rp('Wine reviews', x_wine, y_wine)  # 10S
+rp_benchmark('Wine reviews', x_wine, KMeans(n_clusters=3))  # 1550s
+rp_benchmark('Wine reviews', x_wine, GaussianMixture(n_components=3))  # 1700s
 
 # VAE
 
-# vae('Adult', x_adult, y_adult)  # 38s
-# vae_benchmark('Adult', x_adult, KMeans(n_clusters=5))  # 951s
-# vae_benchmark('Adult', x_adult, GaussianMixture(n_components=6))  # 458s
+vae('Adult', x_adult, y_adult)  # 38s
+vae_benchmark('Adult', x_adult, KMeans(n_clusters=5))  # 951s
+vae_benchmark('Adult', x_adult, GaussianMixture(n_components=6))  # 458s
 
-# vae('Wine reviews', x_wine, y_wine)  # 158s
-# vae_benchmark('Wine reviews', x_wine, KMeans(n_clusters=3))  # 554s
-# vae_benchmark('Wine reviews', x_wine, GaussianMixture(n_components=3))  # 1604s
+vae('Wine reviews', x_wine, y_wine)  # 158s
+vae_benchmark('Wine reviews', x_wine, KMeans(n_clusters=3))  # 554s
+vae_benchmark('Wine reviews', x_wine, GaussianMixture(n_components=3))  # 1604s
 
 # DIMENSIONALITY REDUCTION + CLUSTERING
 
-# reduction_clustering(
-#     [x_adult, x_wine],
-#     [y_adult, y_wine],
-#     [2, 5],
-#     [KMeans(n_clusters=5), KMeans(n_clusters=3)],
-#     [PCA(n_components=2), PCA(n_components=2)],
-#     [FastICA(n_components=2), FastICA(n_components=2)],
-#     [None, GaussianRandomProjection(eps=0.95)],
-#     [utils.create_vae(np.shape(x_adult)[1]), utils.create_vae(np.shape(x_wine)[1])]
-# )  # 202s
-# reduction_clustering(
-#     [x_adult, x_wine],
-#     [y_adult, y_wine],
-#     [2, 5],
-#     [GaussianMixture(n_components=6), GaussianMixture(n_components=3)],
-#     [PCA(n_components=3), PCA(n_components=2)],
-#     [FastICA(n_components=3), FastICA(n_components=3)],
-#     [None, GaussianRandomProjection(eps=0.95)],
-#     [utils.create_vae(np.shape(x_adult)[1]), utils.create_vae(np.shape(x_wine)[1])]
-# )  # 291s
-# legend()
+reduction_clustering(
+    [x_adult, x_wine],
+    [y_adult, y_wine],
+    [2, 5],
+    [KMeans(n_clusters=5), KMeans(n_clusters=3)],
+    [PCA(n_components=2), PCA(n_components=2)],
+    [FastICA(n_components=2), FastICA(n_components=2)],
+    [None, GaussianRandomProjection(eps=0.95)],
+    [utils.create_vae(np.shape(x_adult)[1]), utils.create_vae(np.shape(x_wine)[1])]
+)  # 202s
+reduction_clustering(
+    [x_adult, x_wine],
+    [y_adult, y_wine],
+    [2, 5],
+    [GaussianMixture(n_components=6), GaussianMixture(n_components=3)],
+    [PCA(n_components=3), PCA(n_components=2)],
+    [FastICA(n_components=3), FastICA(n_components=3)],
+    [None, GaussianRandomProjection(eps=0.95)],
+    [utils.create_vae(np.shape(x_adult)[1]), utils.create_vae(np.shape(x_wine)[1])]
+)  # 291s
 
 # DIMENSIONALITY REDUCTION + NN
 
-# nn([x_adult, x_wine], [y_adult, y_wine], [x_adult_test, x_wine_test], [y_adult_test, y_wine_test])  # 2181s
-# nn_benchmark(
-#     [x_adult, x_wine],
-#     [y_adult, y_wine],
-#     [104, 1075, 8, 2, 9, 5, 0, 5, 2, 10]
-# )  # 1661s
+nn([x_adult, x_wine], [y_adult, y_wine], [x_adult_test, x_wine_test], [y_adult_test, y_wine_test])  # 2181s
+nn_benchmark(
+    [x_adult, x_wine],
+    [y_adult, y_wine],
+    [104, 1075, 8, 2, 9, 5, 0, 5, 2, 10]
+)  # 1661s
 
 # DIMENSIONALITY REDUCTION + CLUSTERING + NN
 
-# nn2(
-#     [x_adult, x_wine],
-#     [y_adult, y_wine],
-#     [x_adult_test, x_wine_test],
-#     [y_adult_test, y_wine_test],
-#     [104, 1075, 8, 2, 9, 5, 0, 5, 2, 10],
-#     KMeans
-# )  # 2372s
-# nn2(
-#     [x_adult, x_wine],
-#     [y_adult, y_wine],
-#     [x_adult_test, x_wine_test],
-#     [y_adult_test, y_wine_test],
-#     [104, 1075, 8, 2, 9, 5, 0, 5, 2, 10],
-#     GaussianMixture
-# )  # 2179s
+nn2(
+    [x_adult, x_wine],
+    [y_adult, y_wine],
+    [x_adult_test, x_wine_test],
+    [y_adult_test, y_wine_test],
+    [104, 1075, 8, 2, 9, 5, 0, 5, 2, 10],
+    KMeans
+)  # 2372s
+nn2(
+    [x_adult, x_wine],
+    [y_adult, y_wine],
+    [x_adult_test, x_wine_test],
+    [y_adult_test, y_wine_test],
+    [104, 1075, 8, 2, 9, 5, 0, 5, 2, 10],
+    GaussianMixture
+)  # 2179s

@@ -1,7 +1,7 @@
-import pandas as pd
+import keras.backend as K
 import matplotlib.pyplot as plot
 import numpy as np
-import keras.backend as K
+import pandas as pd
 from keras import Input, Model, Sequential
 from keras.layers import Dense, Lambda, BatchNormalization, Dropout, Concatenate
 from keras.losses import mse
@@ -98,9 +98,6 @@ def import_adult(use_to_categorical=False, n_samples=40000, n_test_samples=5000)
     if use_to_categorical:
         from keras.utils import to_categorical
         y = to_categorical(y)
-
-    # for key in x.keys():
-    #     x[key] = normalize(x[key])
 
     x['age'] = normalize(x['age'])
     x['fnlwgt'] = normalize(x['fnlwgt'])
